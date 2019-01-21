@@ -1,2 +1,5 @@
 # hello-world
-first repository
+
+First GITHUB repo,
+
+Hello-World Program, first commit!!
