@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Focus Timer</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --line: #e3e6ea;
+    --text: #1b1f24;
+    --muted: #6b7280;
+    --accent: #e05252;
+    --accent-soft: #fdeaea;
+    --track: #e8ebef;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  }
+  :root[data-mode="short"]  { --accent: #2f9e6e; --accent-soft: #e6f5ee; }
+  :root[data-mode="long"]   { --accent: #3b7ddd; --accent-soft: #e8f0fd; }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216;
+      --panel: #171b21;
+      --line: #262c35;
+      --text: #e8eaed;
+      --muted: #8b93a1;
+      --accent-soft: #2a1d1d;
+      --track: #262c35;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+    :root[data-mode="short"] { --accent-soft: #16281f; }
+    :root[data-mode="long"]  { --accent-soft: #172333; }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 820px) { .wrap { grid-template-columns: 1fr; } }
+
+  header { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 19px; margin: 0; letter-spacing: -.01em; }
+  header .sub { color: var(--muted); font-size: 13px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+  .timer { padding: 24px; text-align: center; }
+
+  .modes { display: inline-flex; background: var(--track); border-radius: 999px; padding: 3px; gap: 2px; }
+  .modes button {
+    border: 0; background: transparent; color: var(--muted); cursor: pointer;
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+  }
+  .modes button[aria-pressed="true"] { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
+
+  .dial { position: relative; width: 260px; height: 260px; margin: 22px auto 6px; }
+  .dial svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .dial .track { fill: none; stroke: var(--track); stroke-width: 9; }
+  .dial .prog  { fill: none; stroke: var(--accent); stroke-width: 9; stroke-linecap: round; transition: stroke-dashoffset .3s linear; }
+  .dial .center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 4px;
+  }
+  .time { font-size: 54px; font-weight: 600; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+  .phase { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .09em; }
+
+  .task-input {
+    width: 100%; max-width: 380px; margin: 14px auto 0; display: block;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    border-radius: 10px; padding: 10px 13px; font: inherit; text-align: center;
+  }
+  .task-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+
+  .controls { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+  .btn {
+    font: inherit; cursor: pointer; border-radius: 10px; padding: 10px 20px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; min-width: 118px; font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.07); }
+
+  .dots { margin-top: 16px; display: flex; gap: 6px; justify-content: center; align-items: center; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--track); }
+  .dot.on { background: var(--accent); }
+
+  .side { display: grid; gap: 20px; }
+  .sec { padding: 18px; }
+  .sec h2 { font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  .total { font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+  .total small { font-size: 13px; font-weight: 400; color: var(--muted); }
+
+  .bars { margin-top: 14px; display: grid; gap: 9px; }
+  .bar-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+  .bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-min { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar-track { grid-column: 1 / -1; height: 7px; background: var(--track); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width .35s ease; }
+
+  .log { margin-top: 6px; max-height: 260px; overflow-y: auto; }
+  .log-item { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .log-item:last-child { border-bottom: 0; }
+  .log-item .when { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .log-item .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
+
+  details.settings { margin-top: 4px; }
+  details.settings summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; }
+  details.settings summary::-webkit-details-marker { display: none; }
+  details.settings summary::before { content: "⚙  "; }
+  .fields { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; margin-top: 14px; font-size: 13px; }
+  .fields input[type=number] {
+    width: 74px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    border-radius: 8px; padding: 6px 8px; font: inherit;
+  }
+  .fields label.check { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+  .link { background: none; border: 0; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
+  .link:hover { color: var(--accent); }
+  .row-end { display: flex; justify-content: flex-end; margin-top: 12px; gap: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Focus Timer</h1>
+    <span class="sub">Pomodoro sessions, logged as you go. Everything stays in this browser.</span>
+  </header>
+
+  <main class="card timer">
+    <div class="modes" role="group" aria-label="Timer mode">
+      <button type="button" data-set-mode="focus" aria-pressed="true">Focus</button>
+      <button type="button" data-set-mode="short" aria-pressed="false">Short break</button>
+      <button type="button" data-set-mode="long"  aria-pressed="false">Long break</button>
+    </div>
+
+    <div class="dial">
+      <svg viewBox="0 0 260 260" aria-hidden="true">
+        <circle class="track" cx="130" cy="130" r="118"></circle>
+        <circle class="prog"  cx="130" cy="130" r="118" id="prog"></circle>
+      </svg>
+      <div class="center">
+        <div class="time" id="time" aria-live="off">25:00</div>
+        <div class="phase" id="phase">Focus</div>
+      </div>
+    </div>
+
+    <input class="task-input" id="task" type="text" maxlength="60"
+           placeholder="What are you working on?" autocomplete="off">
+
+    <div class="controls">
+      <button class="btn primary" id="startPause" type="button">Start</button>
+      <button class="btn" id="reset" type="button">Reset</button>
+      <button class="btn" id="skip" type="button">Skip</button>
+    </div>
+
+    <div class="dots" id="dots"></div>
+  </main>
+
+  <aside class="side">
+    <section class="card sec">
+      <h2>Today</h2>
+      <div class="total" id="total">0m <small id="sessionCount">no sessions yet</small></div>
+      <div class="bars" id="bars"></div>
+    </section>
+
+    <section class="card sec">
+      <h2>Session log</h2>
+      <div class="log" id="log"></div>
+      <div class="row-end">
+        <button class="link" id="exportLog" type="button">Export CSV</button>
+        <button class="link" id="clearLog" type="button">Clear all</button>
+      </div>
+    </section>
+
+    <section class="card sec">
+      <details class="settings">
+        <summary>Settings</summary>
+        <div class="fields">
+          <span>Focus length (min)</span>
+          <input type="number" id="setFocus" min="1" max="180" step="1">
+          <span>Short break (min)</span>
+          <input type="number" id="setShort" min="1" max="60" step="1">
+          <span>Long break (min)</span>
+          <input type="number" id="setLong" min="1" max="90" step="1">
+          <span>Long break every N focus sessions</span>
+          <input type="number" id="setEvery" min="2" max="12" step="1">
+          <label class="check"><input type="checkbox" id="setAuto"> Auto-start the next session</label>
+          <label class="check"><input type="checkbox" id="setSound"> Play a chime when a session ends</label>
+        </div>
+      </details>
+    </section>
+  </aside>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORE = "focus-timer.v1";
+  var DEFAULTS = { focus: 25, short: 5, long: 15, every: 4, auto: true, sound: true };
+
+  var LABELS = { focus: "Focus", short: "Short break", long: "Long break" };
+  var CIRC = 2 * Math.PI * 118;
+
+  // ---- state ---------------------------------------------------------------
+  var settings = Object.assign({}, DEFAULTS);
+  var log = [];            // { task, minutes, endedAt (ms), mode }
+  var mode = "focus";
+  var streak = 0;          // completed focus sessions in the current cycle
+  var running = false;
+  var endAt = 0;           // ms timestamp the current run ends at
+  var remaining = 0;       // ms left when paused
+  var startedAt = 0;       // ms the current focus run began (for partial logging)
+  var ticker = null;
+  var booting = true;      // suppress auto-start while restoring saved state
+
+  // ---- elements ------------------------------------------------------------
+  var $ = function (id) { return document.getElementById(id); };
+  var elTime = $("time"), elPhase = $("phase"), elProg = $("prog"), elTask = $("task");
+  var elStart = $("startPause"), elDots = $("dots"), elBars = $("bars"), elLog = $("log");
+  var elTotal = $("total"), elCount = $("sessionCount");
+
+  elProg.style.strokeDasharray = CIRC;
+
+  // ---- persistence ---------------------------------------------------------
+  function save() {
+    try {
+      localStorage.setItem(STORE, JSON.stringify({
+        settings: settings, log: log, mode: mode, streak: streak,
+        running: running, endAt: endAt, remaining: remaining,
+        startedAt: startedAt, task: elTask.value
+      }));
+    } catch (e) { /* storage full or blocked — the timer still works */ }
+  }
+
+  function load() {
+    var raw;
+    try { raw = localStorage.getItem(STORE); } catch (e) { return; }
+    if (!raw) return;
+    var d;
+    try { d = JSON.parse(raw); } catch (e) { return; }
+
+    settings = Object.assign({}, DEFAULTS, d.settings || {});
+    log = Array.isArray(d.log) ? d.log : [];
+    mode = LABELS[d.mode] ? d.mode : "focus";
+    streak = d.streak || 0;
+    elTask.value = d.task || "";
+    startedAt = d.startedAt || 0;
+
+    if (d.running && d.endAt) {
+      // Restore a run that was in flight; the clock kept moving while away.
+      endAt = d.endAt;
+      if (endAt > Date.now()) {
+        running = true;
+        remaining = endAt - Date.now();
+      } else {
+        // It finished while the tab was closed — credit it, then land on the next phase.
+        running = false;
+        remaining = 0;
+        finish(true);
+      }
+    } else {
+      remaining = typeof d.remaining === "number" ? d.remaining : duration(mode);
+    }
+  }
+
+  // ---- timer core ----------------------------------------------------------
+  function duration(m) { return settings[m] * 60 * 1000; }
+
+  function setMode(m, keepRunning) {
+    mode = m;
+    document.documentElement.setAttribute("data-mode", m);
+    elPhase.textContent = LABELS[m];
+    Array.prototype.forEach.call(document.querySelectorAll("[data-set-mode]"), function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.setMode === m));
+    });
+    if (!keepRunning) {
+      stop();
+      remaining = duration(m);
+    }
+    render();
+  }
+
+  function start() {
+    if (running) return;
+    if (remaining <= 0) remaining = duration(mode);
+    endAt = Date.now() + remaining;
+    if (mode === "focus" && !startedAt) startedAt = Date.now();
+    running = true;
+    ticker = setInterval(tick, 200);
+    render();
+    save();
+  }
+
+  function stop() {
+    running = false;
+    if (ticker) { clearInterval(ticker); ticker = null; }
+  }
+
+  function pause() {
+    if (!running) return;
+    remaining = Math.max(0, endAt - Date.now());
+    stop();
+    render();
+    save();
+  }
+
+  function reset() {
+    stop();
+    remaining = duration(mode);
+    startedAt = 0;
+    render();
+    save();
+  }
+
+  function tick() {
+    remaining = endAt - Date.now();
+    if (remaining <= 0) {
+      remaining = 0;
+      finish(false);
+      return;
+    }
+    render();
+  }
+
+  // Called when the countdown hits zero. `silent` skips chime/notification for
+  // sessions that completed while the tab was closed.
+  function finish(silent) {
+    stop();
+    if (mode === "focus") {
+      addEntry(settings.focus, Date.now());
+      streak += 1;
+    }
+    if (!silent) {
+      chime();
+      notify(mode === "focus" ? "Focus session done" : "Break over",
+             mode === "focus" ? (elTask.value.trim() || "Nice work.") : "Back to it.");
+    }
+    advance();
+  }
+
+  // Move to whichever phase logically comes next.
+  function advance() {
+    var next;
+    if (mode === "focus") {
+      next = (streak > 0 && streak % settings.every === 0) ? "long" : "short";
+    } else {
+      next = "focus";
+      startedAt = 0;
+    }
+    setMode(next);
+    if (settings.auto && !booting) start();
+    render();
+    save();
+  }
+
+  // Skip: bank whatever focus time was actually spent (if it rounds to >= 1 min),
+  // then move on. Breaks are just abandoned.
+  function skip() {
+    if (mode === "focus" && startedAt) {
+      var spent = Math.round((duration("focus") - Math.max(0, remainingNow())) / 60000);
+      if (spent >= 1) { addEntry(spent, Date.now()); streak += 1; }
+    }
+    stop();
+    advance();
+  }
+
+  function remainingNow() { return running ? endAt - Date.now() : remaining; }
+
+  function addEntry(minutes, endedAt) {
+    log.unshift({ task: elTask.value.trim() || "Untitled", minutes: minutes, endedAt: endedAt });
+    if (log.length > 500) log.length = 500;
+    startedAt = 0;
+  }
+
+  // ---- feedback ------------------------------------------------------------
+  function chime() {
+    if (!settings.sound) return;
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      var ctx = new Ctx();
+      [0, 0.18, 0.36].forEach(function (offset, i) {
+        var osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = [660, 880, 1100][i];
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime + offset);
+        gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.16);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(ctx.currentTime + offset);
+        osc.stop(ctx.currentTime + offset + 0.2);
+      });
+      setTimeout(function () { ctx.close(); }, 1200);
+    } catch (e) { /* audio unavailable */ }
+  }
+
+  function notify(title, body) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    try { new Notification(title, { body: body }); } catch (e) {}
+  }
+
+  // ---- rendering -----------------------------------------------------------
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+
+  function fmt(ms) {
+    var total = Math.ceil(ms / 1000);
+    return pad(Math.floor(total / 60)) + ":" + pad(total % 60);
+  }
+
+  function fmtMinutes(min) {
+    var h = Math.floor(min / 60), m = min % 60;
+    return h ? h + "h " + m + "m" : m + "m";
+  }
+
+  function startOfToday() {
+    var d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime();
+  }
+
+  function render() {
+    var left = Math.max(0, remainingNow());
+    var text = fmt(left);
+
+    elTime.textContent = text;
+    elProg.style.strokeDashoffset = CIRC * (1 - Math.min(1, left / duration(mode)));
+    elStart.textContent = running ? "Pause" : (left < duration(mode) ? "Resume" : "Start");
+    document.title = running ? text + " · " + LABELS[mode] : "Focus Timer";
+
+    // cycle dots
+    var done = settings.every ? streak % settings.every : 0;
+    if (streak > 0 && done === 0) done = settings.every;
+    var dots = "";
+    for (var i = 0; i < settings.every; i++) {
+      dots += '<span class="dot' + (i < done ? " on" : "") + '"></span>';
+    }
+    elDots.innerHTML = dots + '<span style="margin-left:6px">' + done + " / " + settings.every + " to a long break</span>";
+
+    renderStats();
+  }
+
+  function renderStats() {
+    var today = log.filter(function (e) { return e.endedAt >= startOfToday(); });
+    var minutes = today.reduce(function (s, e) { return s + e.minutes; }, 0);
+
+    elTotal.firstChild.nodeValue = fmtMinutes(minutes) + " ";
+    elCount.textContent = today.length
+      ? today.length + (today.length === 1 ? " session" : " sessions")
+      : "no sessions yet";
+
+    // bars: minutes per task today, biggest first
+    var byTask = {};
+    today.forEach(function (e) { byTask[e.task] = (byTask[e.task] || 0) + e.minutes; });
+    var rows = Object.keys(byTask).map(function (k) { return { task: k, min: byTask[k] }; })
+                     .sort(function (a, b) { return b.min - a.min; }).slice(0, 6);
+    var max = rows.length ? rows[0].min : 1;
+
+    elBars.innerHTML = rows.length ? rows.map(function (r) {
+      return '<div class="bar-row">' +
+               '<span class="bar-label">' + esc(r.task) + '</span>' +
+               '<span class="bar-min">' + fmtMinutes(r.min) + '</span>' +
+               '<span class="bar-track"><span class="bar-fill" style="width:' +
+                 Math.max(4, Math.round(r.min / max * 100)) + '%"></span></span>' +
+             '</div>';
+    }).join("") : '<div class="empty">Finish a focus session and it shows up here.</div>';
+
+    elLog.innerHTML = log.length ? log.slice(0, 40).map(function (e) {
+      var d = new Date(e.endedAt);
+      return '<div class="log-item">' +
+               '<span class="what">' + esc(e.task) + '</span>' +
+               '<span class="when">' + fmtMinutes(e.minutes) + " · " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + '</span>' +
+             '</div>';
+    }).join("") : '<div class="empty">Nothing logged yet.</div>';
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // ---- wiring --------------------------------------------------------------
+  elStart.addEventListener("click", function () {
+    if (running) { pause(); return; }
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(function () {});
+    }
+    start();
+  });
+  $("reset").addEventListener("click", reset);
+  $("skip").addEventListener("click", skip);
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-set-mode]"), function (b) {
+    b.addEventListener("click", function () { setMode(b.dataset.setMode); save(); });
+  });
+
+  elTask.addEventListener("input", save);
+
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (e.code === "Space") { e.preventDefault(); running ? pause() : start(); }
+    if (e.key === "r" || e.key === "R") reset();
+    if (e.key === "s" || e.key === "S") skip();
+  });
+
+  // settings
+  var fields = [
+    ["setFocus", "focus"], ["setShort", "short"], ["setLong", "long"], ["setEvery", "every"]
+  ];
+  fields.forEach(function (pair) {
+    var el = $(pair[0]), key = pair[1];
+    el.addEventListener("change", function () {
+      var v = parseInt(el.value, 10);
+      if (!isFinite(v) || v < 1) { el.value = settings[key]; return; }
+      settings[key] = v;
+      if (!running) remaining = duration(mode);
+      render();
+      save();
+    });
+  });
+  $("setAuto").addEventListener("change", function () { settings.auto = this.checked; save(); });
+  $("setSound").addEventListener("change", function () { settings.sound = this.checked; save(); });
+
+  $("clearLog").addEventListener("click", function () {
+    if (!log.length) return;
+    if (!confirm("Delete all " + log.length + " logged sessions? This can't be undone.")) return;
+    log = [];
+    streak = 0;
+    render();
+    save();
+  });
+
+  $("exportLog").addEventListener("click", function () {
+    if (!log.length) return;
+    var rows = [["ended_at", "task", "minutes"]].concat(log.map(function (e) {
+      return [new Date(e.endedAt).toISOString(), '"' + e.task.replace(/"/g, '""') + '"', e.minutes];
+    }));
+    var blob = new Blob([rows.map(function (r) { return r.join(","); }).join("\n")], { type: "text/csv" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "focus-sessions.csv";
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  });
+
+  // ---- boot ----------------------------------------------------------------
+  load();
+  $("setFocus").value = settings.focus;
+  $("setShort").value = settings.short;
+  $("setLong").value = settings.long;
+  $("setEvery").value = settings.every;
+  $("setAuto").checked = settings.auto;
+  $("setSound").checked = settings.sound;
+
+  // Fresh install (or nothing worth restoring): fill the clock for the current mode.
+  if (!running && !(remaining > 0)) remaining = duration(mode);
+
+  booting = false;
+  setMode(mode, true);
+  if (running) { ticker = setInterval(tick, 200); }
+  render();
+
+  // Wall-clock catch-up: browsers throttle timers in background tabs.
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && running) tick();
+  });
+})();
+</script>
+</body>
+</html>
